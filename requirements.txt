@@ -1,0 +1,11 @@
+streamlit==1.42.0
+torch==2.6.0
+torchvision==0.21.0
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==11.1.0
+groq==0.18.0
+huggingface_hub==0.28.1
+matplotlib==3.10.0
+pandas==2.2.3
+streamlit-drawable-canvas==0.9.3
