@@ -296,7 +296,7 @@ with tab3:
             return colors.get(val, "")
 
         st.dataframe(
-            df.style.applymap(color_decision, subset=["Decision"]),
+            df.style.map(color_decision, subset=["Decision"]),
             use_container_width=True
         )
 
