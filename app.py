@@ -364,47 +364,61 @@ with tab3:
 # ══════════════════════════════════════════════════════════════
 with tab4:
     st.subheader("🎨 Draw Mode — Sketch Defect Pattern")
-    st.markdown("**Click/drag on the grid to mark defect dies → Get instant prediction!**")
+    st.markdown("**Click cells to mark defects (red = defect) → Get instant prediction!**")
+
+    # Init grid
+    GRID_SIZE = 20
+    if "grid" not in st.session_state:
+        st.session_state.grid = [[0]*GRID_SIZE for _ in range(GRID_SIZE)]
 
     col_draw, col_draw_result = st.columns([1, 1])
 
     with col_draw:
-        st.write("**Draw defect pattern (black = defect die):**")
-        
-        try:
-            from streamlit_drawable_canvas import st_canvas
-            canvas_result = st_canvas(
-                fill_color="rgba(0, 0, 0, 1)",
-                stroke_width=18,
-                stroke_color="#000000",
-                background_color="#c8c8c8",
-                height=300,
-                width=300,
-                drawing_mode="freedraw",
-                key="canvas"
-            )
-        except Exception as e:
-            st.error(f"Canvas error: {e}")
-            canvas_result = None
+        st.write("**Wafer Grid (click to toggle defect):**")
+
+        # Draw circular mask
+        center = GRID_SIZE // 2
+        radius = GRID_SIZE // 2 - 1
+
+        for r in range(GRID_SIZE):
+            cols = st.columns(GRID_SIZE)
+            for c in range(GRID_SIZE):
+                # Check if inside wafer circle
+                if (r - center)**2 + (c - center)**2 <= radius**2:
+                    cell_val = st.session_state.grid[r][c]
+                    label = "🟥" if cell_val else "⬜"
+                    if cols[c].button(label, key=f"cell_{r}_{c}"):
+                        st.session_state.grid[r][c] = 1 - cell_val
+                        st.rerun()
+                else:
+                    cols[c].write("⬛")
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            draw_predict = st.button("🚀 Predict Drawing", use_container_width=True, type="primary")
+            draw_predict = st.button("🚀 Predict", use_container_width=True, type="primary")
         with col_b2:
-            if st.button("🗑️ Clear Canvas", use_container_width=True):
+            if st.button("🗑️ Clear", use_container_width=True):
+                st.session_state.grid = [[0]*GRID_SIZE for _ in range(GRID_SIZE)]
                 st.rerun()
 
     with col_draw_result:
         st.write("**Prediction Result:**")
-        if canvas_result is not None and canvas_result.image_data is not None and draw_predict:
-            canvas_array = canvas_result.image_data.astype(np.uint8)
-            canvas_img   = PILImage.fromarray(canvas_array).convert("RGB")
-            canvas_np    = np.array(canvas_img)
-            h, w         = canvas_np.shape[:2]
-            mask_circle  = np.zeros((h, w), dtype=np.uint8)
-            cv2.circle(mask_circle, (w // 2, h // 2), min(w, h) // 2 - 5, 255, -1)
-            result_img   = np.where(mask_circle[:, :, None] > 0, canvas_np, 0)
-            canvas_img   = PILImage.fromarray(result_img.astype(np.uint8))
+        if draw_predict:
+            # Convert grid → image
+            grid_np = np.array(st.session_state.grid, dtype=np.uint8)
+            img_256 = cv2.resize(grid_np * 255, (256, 256), interpolation=cv2.INTER_NEAREST)
+
+            # Apply circular wafer mask
+            mask = np.zeros((256, 256), dtype=np.uint8)
+            cv2.circle(mask, (128, 128), 120, 255, -1)
+            img_256 = cv2.bitwise_and(img_256, mask)
+
+            # Invert — defect = dark on gray background
+            wafer_img = np.full((256, 256), 180, dtype=np.uint8)
+            wafer_img[img_256 > 0] = 20
+            wafer_img[mask == 0]   = 0
+
+            canvas_img = PILImage.fromarray(wafer_img).convert("RGB")
 
             with st.spinner("Predicting..."):
                 result = predict(canvas_img, model, die_area)
@@ -423,6 +437,9 @@ with tab4:
             d1.metric("Defect",     defect)
             d2.metric("Confidence", f"{conf:.1f}%")
             d3.metric("Yield",      f"{yld}%")
+
+            # Show drawn wafer
+            st.image(canvas_img, caption="Your drawn wafer", width=200)
 
             probs   = result["all_probs"]
             prob_df = pd.DataFrame(list(probs.items()), columns=["Class", "Prob"])
@@ -450,7 +467,5 @@ with tab4:
                 "Yield (%)":      yld,
                 "Decision":       dec
             })
-        elif draw_predict and canvas_result is None:
-            st.warning("Canvas not loaded! Try refreshing the page.")
         else:
-            st.info("Draw a defect pattern and click Predict!")
+            st.info("Mark defect cells on the grid and click Predict!")
