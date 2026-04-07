@@ -365,234 +365,93 @@ with tab3:
 # ══════════════════════════════════════════════════════════════
 with tab4:
     st.subheader("🎨 Draw Mode — Sketch Defect Pattern")
-    st.markdown("**Draw defect pattern on the wafer → Click Predict!**")
+    st.markdown("**Click/drag on the grid to mark defect dies → Get instant prediction!**")
 
     col_draw, col_draw_result = st.columns([1, 1])
 
     with col_draw:
-        canvas_html = """
-        <style>
-            #wrap { display:flex; flex-direction:column; align-items:center; gap:10px; font-family:sans-serif; }
-            canvas { cursor:crosshair; image-rendering:pixelated; }
-            .btns { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-            .btn  { padding:8px 18px; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; }
-            #clearBtn { background:#dc3545; color:white; }
-            #undoBtn  { background:#6c757d; color:white; }
-            #sendBtn  { background:#28a745; color:white; }
-            #brushWrap { display:flex; align-items:center; gap:8px; font-size:13px; }
-            #status { font-size:12px; color:#555; }
-        </style>
-        <div id="wrap">
-            <div id="brushWrap">
-                🖌️ Brush: <input type="range" id="brushSize" min="4" max="40" value="14" style="width:100px;">
-                <span id="brushVal">14</span>px
-            </div>
-            <canvas id="wc" width="320" height="320"></canvas>
-            <div class="btns">
-                <button class="btn" id="undoBtn">↩️ Undo</button>
-                <button class="btn" id="clearBtn">🗑️ Clear</button>
-                <button class="btn" id="sendBtn">📤 Send to Predict</button>
-            </div>
-            <div id="status">Draw on the wafer, then click Send to Predict</div>
-        </div>
+        st.write("**Draw defect pattern (black = defect die):**")
 
-        <script>
-        const canvas = document.getElementById('wc');
-        const ctx    = canvas.getContext('2d');
-        const W = canvas.width, H = canvas.height;
-        const cx = W/2, cy = H/2, r = W/2 - 6;
-        let painting = false;
-        let brushSize = 14;
-        let history   = [];
+        canvas_result = st_canvas(
+            fill_color="rgba(0, 0, 0, 1)",
+            stroke_width=18,
+            stroke_color="#000000",
+            background_color="#c8c8c8",
+            height=300,
+            width=300,
+            drawing_mode="freedraw",
+            key="canvas"
+        )
 
-        document.getElementById('brushSize').addEventListener('input', function() {
-            brushSize = parseInt(this.value);
-            document.getElementById('brushVal').innerText = brushSize;
-        });
-
-        function drawBg() {
-            ctx.clearRect(0,0,W,H);
-            ctx.fillStyle = '#111';
-            ctx.fillRect(0,0,W,H);
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, Math.PI*2);
-            ctx.clip();
-            ctx.fillStyle = '#c0c0c0';
-            ctx.fillRect(0,0,W,H);
-            ctx.restore();
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, Math.PI*2);
-            ctx.strokeStyle = '#888';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(cx, cy+r-2, 6, 0, Math.PI*2);
-            ctx.fillStyle = '#111';
-            ctx.fill();
-        }
-
-        function saveHistory() {
-            history.push(canvas.toDataURL());
-            if (history.length > 30) history.shift();
-        }
-
-        drawBg();
-        saveHistory();
-
-        function getPos(e) {
-            const rect = canvas.getBoundingClientRect();
-            const sx = W/rect.width, sy = H/rect.height;
-            if (e.touches) return {
-                x: (e.touches[0].clientX - rect.left)*sx,
-                y: (e.touches[0].clientY - rect.top)*sy
-            };
-            return { x:(e.clientX-rect.left)*sx, y:(e.clientY-rect.top)*sy };
-        }
-
-        function inCircle(x,y) { return (x-cx)**2+(y-cy)**2 <= (r-4)**2; }
-
-        function startDraw(e) {
-            e.preventDefault();
-            painting = true;
-            saveHistory();
-            const p = getPos(e);
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-        }
-
-        function endDraw(e) {
-            e.preventDefault();
-            painting = false;
-            ctx.beginPath();
-        }
-
-        function draw(e) {
-            e.preventDefault();
-            if (!painting) return;
-            const p = getPos(e);
-            if (!inCircle(p.x, p.y)) return;
-            ctx.lineWidth   = brushSize;
-            ctx.lineCap     = 'round';
-            ctx.lineJoin    = 'round';
-            ctx.strokeStyle = '#111111';
-            ctx.lineTo(p.x, p.y);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-        }
-
-        canvas.addEventListener('mousedown',  startDraw);
-        canvas.addEventListener('mouseup',    endDraw);
-        canvas.addEventListener('mouseleave', endDraw);
-        canvas.addEventListener('mousemove',  draw);
-        canvas.addEventListener('touchstart', startDraw, {passive:false});
-        canvas.addEventListener('touchend',   endDraw,   {passive:false});
-        canvas.addEventListener('touchmove',  draw,      {passive:false});
-
-        document.getElementById('undoBtn').onclick = function() {
-            if (history.length > 1) {
-                history.pop();
-                const img = new Image();
-                img.src = history[history.length - 1];
-                img.onload = () => ctx.drawImage(img, 0, 0);
-                document.getElementById('status').innerText = 'Undone!';
-            } else {
-                drawBg();
-                history = [];
-                saveHistory();
-                document.getElementById('status').innerText = 'Nothing to undo!';
-            }
-        };
-
-        document.getElementById('clearBtn').onclick = function() {
-            drawBg();
-            history = [];
-            saveHistory();
-            document.getElementById('status').innerText = 'Cleared!';
-        };
-
-        document.getElementById('sendBtn').onclick = function() {
-            const data = canvas.toDataURL('image/png');
-            // Find all textareas in parent and set value
-            const textareas = window.parent.document.querySelectorAll('textarea');
-            let sent = false;
-            textareas.forEach(ta => {
-                const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-                setter.call(ta, data);
-                ta.dispatchEvent(new Event('input', {bubbles:true}));
-                sent = true;
-            });
-            document.getElementById('status').innerText = sent
-                ? '✅ Sent! Now click Predict Drawing below.'
-                : '❌ Could not send. Try again.';
-        };
-        </script>
-        """
-        components.html(canvas_html, height=460)
-
-        img_data     = st.text_area("img", key="draw_data", height=50, label_visibility="collapsed")
-        draw_predict = st.button("🚀 Predict Drawing", use_container_width=True, type="primary")
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            draw_predict = st.button("🚀 Predict Drawing", use_container_width=True, type="primary")
+        with col_b2:
+            st.button("🗑️ Clear Canvas", use_container_width=True)
 
     with col_draw_result:
-        if draw_predict:
-            raw = (img_data or "").strip()
-            if raw and raw.startswith("data:image"):
-                try:
-                    _, encoded = raw.split(",", 1)
-                    img_bytes  = base64.b64decode(encoded)
-                    draw_img   = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
-                    st.image(draw_img, caption="Your drawing", width=220)
+        if canvas_result.image_data is not None and draw_predict:
+            # Convert canvas → PIL image
+            canvas_array = canvas_result.image_data.astype(np.uint8)
+            canvas_img   = PILImage.fromarray(canvas_array).convert("RGB")
 
-                    with st.spinner("Predicting..."):
-                        result = predict(draw_img, model, die_area)
+            # Add circular wafer mask
+            canvas_np  = np.array(canvas_img)
+            h, w       = canvas_np.shape[:2]
+            mask_circle = np.zeros((h, w), dtype=np.uint8)
+            cv2.circle(mask_circle, (w // 2, h // 2), min(w, h) // 2 - 5, 255, -1)
+            wafer_bg   = np.full_like(canvas_np, 200)
+            result_img = np.where(mask_circle[:, :, None] > 0, canvas_np, 0)
+            canvas_img = PILImage.fromarray(result_img.astype(np.uint8))
 
-                    defect = result["defect_type"]
-                    conf   = result["confidence"]
-                    yld    = result["yield_pct"]
-                    dec    = result["decision"]
+            with st.spinner("Predicting..."):
+                result = predict(canvas_img, model, die_area)
 
-                    badge_class = {"SAVE":"save-badge","REVIEW":"review-badge","SCRAP":"scrap-badge"}[dec]
-                    badge_emoji = {"SAVE":"✅","REVIEW":"⚠️","SCRAP":"❌"}[dec]
-                    st.markdown(f'<span class="{badge_class}">{badge_emoji} {dec}</span>', unsafe_allow_html=True)
-                    st.write("")
+            defect = result["defect_type"]
+            conf   = result["confidence"]
+            yld    = result["yield_pct"]
+            dec    = result["decision"]
 
-                    d1, d2, d3 = st.columns(3)
-                    d1.metric("Defect",     defect)
-                    d2.metric("Confidence", f"{conf:.1f}%")
-                    d3.metric("Yield",      f"{yld}%")
+            badge_class = {"SAVE": "save-badge", "REVIEW": "review-badge", "SCRAP": "scrap-badge"}[dec]
+            badge_emoji = {"SAVE": "✅", "REVIEW": "⚠️", "SCRAP": "❌"}[dec]
 
-                    probs   = result["all_probs"]
-                    prob_df = pd.DataFrame(list(probs.items()), columns=["Class","Prob"])
-                    prob_df = prob_df.sort_values("Prob", ascending=True)
-                    fig7, ax7 = plt.subplots(figsize=(5,4))
-                    ax7.barh(prob_df["Class"], prob_df["Prob"],
-                             color=["#4361ee" if c==defect else "#adb5bd" for c in prob_df["Class"]])
-                    ax7.set_xlabel("Probability (%)"); ax7.set_title("Class Probabilities")
-                    plt.tight_layout(); st.pyplot(fig7); plt.close()
+            st.write("**Prediction Result:**")
+            st.markdown(f'<span class="{badge_class}">{badge_emoji} {dec}</span>', unsafe_allow_html=True)
+            st.write("")
 
-                    if groq_key:
-                        with st.spinner("Getting expert analysis..."):
-                            explanation = get_explanation(defect, conf, yld, dec, groq_key)
-                        st.markdown(f'<div class="expert-box">{explanation.replace(chr(10),"<br>")}</div>',
-                                    unsafe_allow_html=True)
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Defect",     defect)
+            d2.metric("Confidence", f"{conf:.1f}%")
+            d3.metric("Yield",      f"{yld}%")
 
-                    st.session_state.history.append({
-                        "Timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Wafer ID":       wafer_id + "-DRAW",
-                        "Defect":         defect,
-                        "Confidence (%)": round(conf, 2),
-                        "Yield (%)":      yld,
-                        "Decision":       dec
-                    })
-                except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.warning("⚠️ Click **📤 Send to Predict** on canvas first, then click Predict Drawing!")
+            # Probs chart
+            probs   = result["all_probs"]
+            prob_df = pd.DataFrame(list(probs.items()), columns=["Class", "Prob"])
+            prob_df = prob_df.sort_values("Prob", ascending=True)
+            fig7, ax7 = plt.subplots(figsize=(5, 4))
+            ax7.barh(prob_df["Class"], prob_df["Prob"],
+                     color=["#4361ee" if c == defect else "#adb5bd" for c in prob_df["Class"]])
+            ax7.set_xlabel("Probability (%)")
+            ax7.set_title("Class Probabilities")
+            plt.tight_layout()
+            st.pyplot(fig7)
+            plt.close()
+
+            if groq_key:
+                with st.spinner("Getting expert analysis..."):
+                    explanation = get_explanation(defect, conf, yld, dec, groq_key)
+                st.markdown(f'<div class="expert-box">{explanation.replace(chr(10), "<br>")}</div>',
+                            unsafe_allow_html=True)
+
+            # Save to history
+            st.session_state.history.append({
+                "Timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Wafer ID":       wafer_id + "-DRAW",
+                "Defect":         defect,
+                "Confidence (%)": round(conf, 2),
+                "Yield (%)":      yld,
+                "Decision":       dec
+            })
         else:
-            st.info("""
-            **Steps:**
-            1. 🎨 Draw defect pattern on wafer
-            2. Click **📤 Send to Predict** button
-            3. Click **🚀 Predict Drawing** below
-            """)
+            st.info("Draw a defect pattern on the canvas and click Predict!")
+
