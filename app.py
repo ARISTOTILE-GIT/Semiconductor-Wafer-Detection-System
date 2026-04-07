@@ -370,38 +370,41 @@ with tab4:
 
     with col_draw:
         st.write("**Draw defect pattern (black = defect die):**")
-
-        canvas_result = st_canvas(
-            fill_color="rgba(0, 0, 0, 1)",
-            stroke_width=18,
-            stroke_color="#000000",
-            background_color="#c8c8c8",
-            height=300,
-            width=300,
-            drawing_mode="freedraw",
-            key="canvas"
-        )
+        
+        try:
+            from streamlit_drawable_canvas import st_canvas
+            canvas_result = st_canvas(
+                fill_color="rgba(0, 0, 0, 1)",
+                stroke_width=18,
+                stroke_color="#000000",
+                background_color="#c8c8c8",
+                height=300,
+                width=300,
+                drawing_mode="freedraw",
+                key="canvas"
+            )
+        except Exception as e:
+            st.error(f"Canvas error: {e}")
+            canvas_result = None
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             draw_predict = st.button("🚀 Predict Drawing", use_container_width=True, type="primary")
         with col_b2:
-            st.button("🗑️ Clear Canvas", use_container_width=True)
+            if st.button("🗑️ Clear Canvas", use_container_width=True):
+                st.rerun()
 
     with col_draw_result:
-        if canvas_result.image_data is not None and draw_predict:
-            # Convert canvas → PIL image
+        st.write("**Prediction Result:**")
+        if canvas_result is not None and canvas_result.image_data is not None and draw_predict:
             canvas_array = canvas_result.image_data.astype(np.uint8)
             canvas_img   = PILImage.fromarray(canvas_array).convert("RGB")
-
-            # Add circular wafer mask
-            canvas_np  = np.array(canvas_img)
-            h, w       = canvas_np.shape[:2]
-            mask_circle = np.zeros((h, w), dtype=np.uint8)
+            canvas_np    = np.array(canvas_img)
+            h, w         = canvas_np.shape[:2]
+            mask_circle  = np.zeros((h, w), dtype=np.uint8)
             cv2.circle(mask_circle, (w // 2, h // 2), min(w, h) // 2 - 5, 255, -1)
-            wafer_bg   = np.full_like(canvas_np, 200)
-            result_img = np.where(mask_circle[:, :, None] > 0, canvas_np, 0)
-            canvas_img = PILImage.fromarray(result_img.astype(np.uint8))
+            result_img   = np.where(mask_circle[:, :, None] > 0, canvas_np, 0)
+            canvas_img   = PILImage.fromarray(result_img.astype(np.uint8))
 
             with st.spinner("Predicting..."):
                 result = predict(canvas_img, model, die_area)
@@ -413,8 +416,6 @@ with tab4:
 
             badge_class = {"SAVE": "save-badge", "REVIEW": "review-badge", "SCRAP": "scrap-badge"}[dec]
             badge_emoji = {"SAVE": "✅", "REVIEW": "⚠️", "SCRAP": "❌"}[dec]
-
-            st.write("**Prediction Result:**")
             st.markdown(f'<span class="{badge_class}">{badge_emoji} {dec}</span>', unsafe_allow_html=True)
             st.write("")
 
@@ -423,7 +424,6 @@ with tab4:
             d2.metric("Confidence", f"{conf:.1f}%")
             d3.metric("Yield",      f"{yld}%")
 
-            # Probs chart
             probs   = result["all_probs"]
             prob_df = pd.DataFrame(list(probs.items()), columns=["Class", "Prob"])
             prob_df = prob_df.sort_values("Prob", ascending=True)
@@ -442,7 +442,6 @@ with tab4:
                 st.markdown(f'<div class="expert-box">{explanation.replace(chr(10), "<br>")}</div>',
                             unsafe_allow_html=True)
 
-            # Save to history
             st.session_state.history.append({
                 "Timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Wafer ID":       wafer_id + "-DRAW",
@@ -451,5 +450,7 @@ with tab4:
                 "Yield (%)":      yld,
                 "Decision":       dec
             })
+        elif draw_predict and canvas_result is None:
+            st.warning("Canvas not loaded! Try refreshing the page.")
         else:
-            st.info("Draw a defect pattern on the canvas and click Predict!")
+            st.info("Draw a defect pattern and click Predict!")
