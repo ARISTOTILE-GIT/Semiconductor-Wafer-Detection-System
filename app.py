@@ -372,12 +372,15 @@ with tab4:
     with col_draw:
         canvas_html = """
         <style>
-            #wrap { display:flex; flex-direction:column; align-items:center; gap:12px; font-family:sans-serif; }
-            canvas { cursor:crosshair; }
-            .btns { display:flex; gap:10px; }
-            .btn  { padding:10px 24px; border:none; border-radius:8px; font-size:15px; font-weight:bold; cursor:pointer; }
-            #clearBtn   { background:#dc3545; color:white; }
-            #brushWrap  { display:flex; align-items:center; gap:8px; font-size:13px; }
+            #wrap { display:flex; flex-direction:column; align-items:center; gap:10px; font-family:sans-serif; }
+            canvas { cursor:crosshair; image-rendering:pixelated; }
+            .btns { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+            .btn  { padding:8px 18px; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; }
+            #clearBtn { background:#dc3545; color:white; }
+            #undoBtn  { background:#6c757d; color:white; }
+            #sendBtn  { background:#28a745; color:white; }
+            #brushWrap { display:flex; align-items:center; gap:8px; font-size:13px; }
+            #status { font-size:12px; color:#555; }
         </style>
         <div id="wrap">
             <div id="brushWrap">
@@ -386,9 +389,13 @@ with tab4:
             </div>
             <canvas id="wc" width="320" height="320"></canvas>
             <div class="btns">
+                <button class="btn" id="undoBtn">↩️ Undo</button>
                 <button class="btn" id="clearBtn">🗑️ Clear</button>
+                <button class="btn" id="sendBtn">📤 Send to Predict</button>
             </div>
+            <div id="status">Draw on the wafer, then click Send to Predict</div>
         </div>
+
         <script>
         const canvas = document.getElementById('wc');
         const ctx    = canvas.getContext('2d');
@@ -396,6 +403,7 @@ with tab4:
         const cx = W/2, cy = H/2, r = W/2 - 6;
         let painting = false;
         let brushSize = 14;
+        let history   = [];
 
         document.getElementById('brushSize').addEventListener('input', function() {
             brushSize = parseInt(this.value);
@@ -423,7 +431,14 @@ with tab4:
             ctx.fillStyle = '#111';
             ctx.fill();
         }
+
+        function saveHistory() {
+            history.push(canvas.toDataURL());
+            if (history.length > 30) history.shift();
+        }
+
         drawBg();
+        saveHistory();
 
         function getPos(e) {
             const rect = canvas.getBoundingClientRect();
@@ -437,17 +452,34 @@ with tab4:
 
         function inCircle(x,y) { return (x-cx)**2+(y-cy)**2 <= (r-4)**2; }
 
-        function startDraw(e) { e.preventDefault(); painting=true; draw(e); }
-        function endDraw(e)   { e.preventDefault(); painting=false; ctx.beginPath(); }
+        function startDraw(e) {
+            e.preventDefault();
+            painting = true;
+            saveHistory();
+            const p = getPos(e);
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+        }
+
+        function endDraw(e) {
+            e.preventDefault();
+            painting = false;
+            ctx.beginPath();
+        }
+
         function draw(e) {
             e.preventDefault();
             if (!painting) return;
             const p = getPos(e);
             if (!inCircle(p.x, p.y)) return;
-            ctx.lineWidth=brushSize; ctx.lineCap='round'; ctx.lineJoin='round';
-            ctx.strokeStyle='#111111';
-            ctx.lineTo(p.x, p.y); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(p.x, p.y);
+            ctx.lineWidth   = brushSize;
+            ctx.lineCap     = 'round';
+            ctx.lineJoin    = 'round';
+            ctx.strokeStyle = '#111111';
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
         }
 
         canvas.addEventListener('mousedown',  startDraw);
@@ -458,23 +490,48 @@ with tab4:
         canvas.addEventListener('touchend',   endDraw,   {passive:false});
         canvas.addEventListener('touchmove',  draw,      {passive:false});
 
-        document.getElementById('clearBtn').onclick = drawBg;
+        document.getElementById('undoBtn').onclick = function() {
+            if (history.length > 1) {
+                history.pop();
+                const img = new Image();
+                img.src = history[history.length - 1];
+                img.onload = () => ctx.drawImage(img, 0, 0);
+                document.getElementById('status').innerText = 'Undone!';
+            } else {
+                drawBg();
+                history = [];
+                saveHistory();
+                document.getElementById('status').innerText = 'Nothing to undo!';
+            }
+        };
 
-        // Auto-send canvas data every 2 seconds to Streamlit textarea
-        setInterval(() => {
+        document.getElementById('clearBtn').onclick = function() {
+            drawBg();
+            history = [];
+            saveHistory();
+            document.getElementById('status').innerText = 'Cleared!';
+        };
+
+        document.getElementById('sendBtn').onclick = function() {
             const data = canvas.toDataURL('image/png');
-            const ta = window.parent.document.querySelector('textarea');
-            if (ta) {
+            // Find all textareas in parent and set value
+            const textareas = window.parent.document.querySelectorAll('textarea');
+            let sent = false;
+            textareas.forEach(ta => {
                 const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
                 setter.call(ta, data);
                 ta.dispatchEvent(new Event('input', {bubbles:true}));
-            }
-        }, 2000);
+                sent = true;
+            });
+            document.getElementById('status').innerText = sent
+                ? '✅ Sent! Now click Predict Drawing below.'
+                : '❌ Could not send. Try again.';
+        };
         </script>
         """
-        components.html(canvas_html, height=420)
+        components.html(canvas_html, height=460)
 
-        img_data = st.text_area("img", key="draw_data", height=50, label_visibility="collapsed")
+        img_data     = st.text_area("img", key="draw_data", height=50, label_visibility="collapsed")
         draw_predict = st.button("🚀 Predict Drawing", use_container_width=True, type="primary")
 
     with col_draw_result:
@@ -531,6 +588,11 @@ with tab4:
                 except Exception as e:
                     st.error(f"Error: {e}")
             else:
-                st.warning("Draw on canvas and wait 2 seconds, then click Predict!")
+                st.warning("⚠️ Click **📤 Send to Predict** on canvas first, then click Predict Drawing!")
         else:
-            st.info("Draw a defect pattern and click Predict!")
+            st.info("""
+            **Steps:**
+            1. 🎨 Draw defect pattern on wafer
+            2. Click **📤 Send to Predict** button
+            3. Click **🚀 Predict Drawing** below
+            """)
